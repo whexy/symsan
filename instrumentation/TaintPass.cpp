@@ -90,6 +90,8 @@ static const unsigned kRetvalTLSSize = 800;
 // the runtime will set the external mask based on the VMA range.
 const char kTaintExternShadowPtrMask[] = "__taint_shadow_ptr_mask";
 
+static cl::opt<bool> TrackMode("TrackMode", cl::desc("track mode"), cl::Hidden);
+
 // The -taint-preserve-alignment flag controls whether this pass assumes that
 // alignment requirements provided by the input IR are correct.  For example,
 // if the input IR contains a load with alignment 8, this flag will cause
@@ -328,6 +330,7 @@ class Taint : public ModulePass {
   /// The shadow type for all primitive types and vector types.
   IntegerType *ShadowTy;
   PointerType *ShadowPtrTy;
+  PointerType *Int8PtrTy;
   ConstantInt *ZeroShadow;
   ConstantInt *ShadowPtrMask;
   ConstantInt *ShadowPtrMul;
@@ -369,6 +372,9 @@ class Taint : public ModulePass {
   FunctionCallee TaintCheckBoundsFn;
   FunctionCallee TaintDebugFn;
   Constant *CallStack;
+  Constant *AngoraContext;
+  Constant *AngoraPrevLoc;
+  Constant *AngoraMapPtr;
   MDNode *ColdCallWeights;
   TaintABIList ABIList;
   DenseMap<Value *, Function *> UnwrappedFnMap;
@@ -390,6 +396,7 @@ class Taint : public ModulePass {
   Constant *getOrBuildTrampolineFunction(FunctionType *FT, StringRef FName);
 
   void addContextRecording(Function &F);
+  void addFastContextRecording(Function &F);
   void addFrameTracing(Function &F);
 
   void initializeRuntimeFunctions(Module &M);
@@ -429,6 +436,10 @@ public:
   Taint(
       const std::vector<std::string> &ABIListFiles = std::vector<std::string>());
 
+  void setValueNonSan(Value *v);
+  void setInsNonSan(Instruction *v);
+  void countEdge(BasicBlock &BB);
+  uint32_t getRandomBasicBlockId();
   bool doInitialization(Module &M) override;
   bool runOnModule(Module &M) override;
 };
@@ -654,6 +665,56 @@ uint32_t Taint::getInstructionId(Instruction *Inst) {
   return djbHash(SourceInfo);
 }
 
+void Taint::setValueNonSan(Value *v) {
+  if (Instruction *ins = dyn_cast<Instruction>(v))
+    setInsNonSan(ins);
+}
+
+void Taint::setInsNonSan(Instruction *ins) {
+  if (ins)
+    ins->setMetadata(Mod->getMDKindID("nosanitize"), MDNode::get(*Ctx, None));
+}
+
+void Taint::addFastContextRecording(Function &F) {
+  // Most code from Angora
+  BasicBlock *BB = &F.getEntryBlock();
+  assert(pred_begin(BB) == pred_end(BB) &&
+         "Assume that entry block has no predecessors");
+
+  // Add ctx ^ hash(fun_name) at the beginning of a function
+  IRBuilder<> IRB(&*(BB->getFirstInsertionPt()));
+
+  // Strip dfs$ prefix
+  auto FName = F.getName();
+  if (FName.startswith("dfs")) {
+    size_t pos = FName.find_first_of('$');
+    FName = FName.drop_front(pos + 1);
+  }
+  // add source file name for static function
+  if (!F.hasExternalLinkage()) {
+    FName = StringRef(Mod->getSourceFileName() + "::" + FName.str());
+  }
+  uint32_t hash = djbHash(FName) % 1048576;
+
+  ConstantInt *CID = ConstantInt::get(Int32Ty, hash);
+  LoadInst *LCS = IRB.CreateLoad(AngoraContext);
+  LCS->setMetadata(Mod->getMDKindID("nosanitize"), MDNode::get(*Ctx, None));
+  Value *NCS = IRB.CreateXor(LCS, CID);
+  StoreInst *SCS = IRB.CreateStore(NCS, AngoraContext);
+  SCS->setMetadata(Mod->getMDKindID("nosanitize"), MDNode::get(*Ctx, None));
+
+  // Recover ctx at the end of a function
+  for (auto FI = F.begin(), FE = F.end(); FI != FE; FI++) {
+    BasicBlock *BB = &*FI;
+    Instruction *Inst = BB->getTerminator();
+    if (isa<ReturnInst>(Inst) || isa<ResumeInst>(Inst)) {
+      IRB.SetInsertPoint(Inst);
+      SCS = IRB.CreateStore(LCS, AngoraContext);
+      SCS->setMetadata(Mod->getMDKindID("nosanitize"), MDNode::get(*Ctx, None));
+    }
+  }
+}
+
 void Taint::addContextRecording(Function &F) {
   // Most code from Angora
   BasicBlock *BB = &F.getEntryBlock();
@@ -730,6 +791,7 @@ bool Taint::doInitialization(Module &M) {
   Int64Ty = IntegerType::get(*Ctx, 64);
   ShadowTy = IntegerType::get(*Ctx, ShadowWidthBits);
   ShadowPtrTy = PointerType::getUnqual(ShadowTy);
+  Int8PtrTy = PointerType::getUnqual(Int8Ty);
   IntptrTy = DL.getIntPtrType(*Ctx);
   ZeroShadow = ConstantInt::getSigned(ShadowTy, 0);
   ShadowPtrMul = ConstantInt::getSigned(IntptrTy, ShadowWidthBytes);
@@ -793,11 +855,17 @@ bool Taint::doInitialization(Module &M) {
 }
 
 bool Taint::isInstrumented(const Function *F) {
-  return !ABIList.isIn(*F, "uninstrumented");
+  if (!TrackMode)
+    return false;
+  else
+    return !ABIList.isIn(*F, "uninstrumented");
 }
 
 bool Taint::isInstrumented(const GlobalAlias *GA) {
-  return !ABIList.isIn(*GA, "uninstrumented");
+  if (!TrackMode)
+    return false;
+  else
+    return !ABIList.isIn(*GA, "uninstrumented");
 }
 
 Taint::InstrumentedABI Taint::getInstrumentedABI() {
@@ -806,12 +874,16 @@ Taint::InstrumentedABI Taint::getInstrumentedABI() {
 
 Taint::WrapperKind Taint::getWrapperKind(Function *F) {
   // priority custom
-  if (ABIList.isIn(*F, "custom"))
+  if (TrackMode) {
+    if (ABIList.isIn(*F, "custom"))
+      return WK_Custom;
+    if (ABIList.isIn(*F, "functional"))
+      return WK_Functional;
+    if (ABIList.isIn(*F, "discard"))
+      return WK_Discard;
+  } else {
     return WK_Custom;
-  if (ABIList.isIn(*F, "functional"))
-    return WK_Functional;
-  if (ABIList.isIn(*F, "discard"))
-    return WK_Discard;
+  }
 
   return WK_Warning;
 }
@@ -900,6 +972,68 @@ Constant *Taint::getOrBuildTrampolineFunction(FunctionType *FT,
   }
 
   return cast<Constant>(C.getCallee());
+}
+
+uint32_t Taint::getRandomBasicBlockId() { return random() % 1048576; }
+
+void Taint::countEdge(BasicBlock &BB) {
+  //if (TrackMode || skipBasicBlock()) {
+  if (TrackMode) {
+    return;
+  }
+
+  unsigned int cur_loc = getRandomBasicBlockId();
+  ConstantInt *CurLoc = ConstantInt::get(Int32Ty, cur_loc);
+
+  BasicBlock::iterator IP = BB.getFirstInsertionPt();
+  IRBuilder<> IRB(&(*IP));
+
+  LoadInst *PrevLoc = IRB.CreateLoad(AngoraPrevLoc);
+  setInsNonSan(PrevLoc);
+
+  Value *PrevLocCasted = IRB.CreateZExt(PrevLoc, Int32Ty);
+  setValueNonSan(PrevLocCasted);
+
+  // Get Map[idx]
+  LoadInst *MapPtr = IRB.CreateLoad(AngoraMapPtr);
+  setInsNonSan(MapPtr);
+
+  Value *BrId = IRB.CreateXor(PrevLocCasted, CurLoc);
+  setValueNonSan(BrId);
+  Value *MapPtrIdx = IRB.CreateGEP(MapPtr, BrId);
+  setValueNonSan(MapPtrIdx);
+  // Increase 1 : IncRet <- Map[idx] + 1
+  LoadInst *Counter = IRB.CreateLoad(MapPtrIdx);
+  setInsNonSan(Counter);
+
+
+  Value *IncRet = IRB.CreateAdd(Counter, ConstantInt::get(Int8Ty, 1));
+  setValueNonSan(IncRet);
+  Value *IsZero = IRB.CreateICmpEQ(IncRet, ConstantInt::get(Int8Ty, 0));
+  setValueNonSan(IsZero);
+  Value *IncVal = IRB.CreateZExt(IsZero, Int8Ty);
+  setValueNonSan(IncVal);
+  IncRet = IRB.CreateAdd(IncRet, IncVal);
+  setValueNonSan(IncRet);
+
+  // Store Back Map[idx]
+  StoreInst *incret = IRB.CreateStore(IncRet, MapPtrIdx);
+  setInsNonSan(incret);
+
+  Value *NewPrevLoc = NULL;
+    // Load ctx
+  LoadInst *CtxVal = IRB.CreateLoad(AngoraContext);
+  setInsNonSan(CtxVal);
+
+  Value *CtxValCasted = IRB.CreateZExt(CtxVal, Int32Ty);
+  setValueNonSan(CtxValCasted);
+    // Udate PrevLoc
+  NewPrevLoc =
+      IRB.CreateXor(CtxValCasted, ConstantInt::get(Int32Ty, cur_loc >> 1));
+  setValueNonSan(NewPrevLoc);
+
+  StoreInst *Store = IRB.CreateStore(NewPrevLoc, AngoraPrevLoc);
+  setInsNonSan(Store);
 }
 
 // Initialize DataFlowSanitizer runtime functions and declare them in the module
@@ -1040,12 +1174,76 @@ bool Taint::runOnModule(Module &M) {
   if (ABIList.isIn(M, "skip"))
     return false;
 
+  if (TrackMode) {
+    printf("Track Mode. \n");
+  } else {
+    printf("Fast Mode.\n");
+  }
+
   const unsigned InitialGlobalSize = M.global_size();
   const unsigned InitialModuleSize = M.size();
 
   bool Changed = false;
 
+  if (!TrackMode) {
+    AngoraContext = Mod->getOrInsertGlobal("__angora_context", Int32Ty);
+    if (GlobalVariable *G = dyn_cast<GlobalVariable>(AngoraContext)) {
+      G->setThreadLocalMode(GlobalVariable::GeneralDynamicTLSModel);
+      G->setLinkage(GlobalValue::CommonLinkage);
+      G->setConstant(false);
+      G->setInitializer(ConstantInt::get(Int32Ty,0));
+    }
+
+    AngoraPrevLoc = Mod->getOrInsertGlobal("__angora_prev_loc", Int32Ty);
+    if (GlobalVariable *G = dyn_cast<GlobalVariable>(AngoraPrevLoc)) {
+      G->setThreadLocalMode(GlobalVariable::GeneralDynamicTLSModel);
+      G->setLinkage(GlobalValue::CommonLinkage);
+      G->setConstant(false);
+      G->setInitializer(ConstantInt::get(Int32Ty,0));
+    }
+
+    AngoraMapPtr = Mod->getOrInsertGlobal("__angora_area_ptr", Int8PtrTy);
+    if (GlobalVariable *G = dyn_cast<GlobalVariable>(AngoraMapPtr)) {
+      G->setLinkage(GlobalValue::ExternalLinkage);
+      G->setConstant(false);
+    }
+
+    std::vector<Function *> FnsToInstrument;
+    SmallPtrSet<Function *, 2> FnsWithNativeABI;
+    for (Function &i : M) {
+      if (!i.isIntrinsic())
+        FnsToInstrument.push_back(&i);
+    }
+    for (Function *i : FnsToInstrument) {
+      if (!i || i->isDeclaration())
+      continue;
+
+      addFastContextRecording(*i);
+      removeUnreachableBlocks(*i);
+
+      TaintFunction TF(*this, i, FnsWithNativeABI.count(i));
+
+      SmallVector<BasicBlock *, 4> BBList(depth_first(&i->getEntryBlock()));
+
+      for (BasicBlock *i : BBList) {
+        Instruction *Inst = &i->front();
+        while (true) {
+          if (Inst == &(*i->getFirstInsertionPt())) {
+            countEdge(*i);
+          }
+          Instruction *Next = Inst->getNextNode();
+          bool IsTerminator = Inst->isTerminator();
+          if (IsTerminator)
+            break;
+          Inst = Next;
+        }
+      }
+    }
+    return true;
+  }
+
   Type *ArgTLSTy = ArrayType::get(Int64Ty, kArgTLSSize / 8);
+  
   ArgTLS = Mod->getOrInsertGlobal("__dfsan_arg_tls", ArgTLSTy);
   if (GlobalVariable *G = dyn_cast<GlobalVariable>(ArgTLS)) {
     Changed |= G->getThreadLocalMode() != GlobalVariable::InitialExecTLSModel;
@@ -1073,6 +1271,8 @@ bool Taint::runOnModule(Module &M) {
 
   initializeCallbackFunctions(M);
   initializeRuntimeFunctions(M);
+
+  
 
   std::vector<Function *> FnsToInstrument;
   SmallPtrSet<Function *, 2> FnsWithNativeABI;
@@ -1348,6 +1548,7 @@ Value *TaintFunction::getShadowForTLSArgument(Argument *A) {
 }
 
 Value *TaintFunction::getShadow(Value *V) {
+  if (!TrackMode) return TT.ZeroShadow;
   if (!isa<Argument>(V) && !isa<Instruction>(V))
     return TT.getZeroShadow(V);
   Value *&Shadow = ValShadowMap[V];
@@ -1379,6 +1580,7 @@ Value *TaintFunction::getShadow(Value *V) {
 }
 
 void TaintFunction::setShadow(Instruction *I, Value *Shadow) {
+  if (!TrackMode) return;
   assert(!ValShadowMap.count(I));
   assert(Shadow->getType() == TT.ShadowTy);
   ValShadowMap[I] = Shadow;
@@ -1425,6 +1627,7 @@ Value *TaintFunction::combineBinaryOperatorShadows(BinaryOperator *BO,
 Value *TaintFunction::combineShadows(Value *V1, Value *V2,
                                      uint16_t op,
                                      Instruction *Pos) {
+  if (!TrackMode) return TT.ZeroShadow;
   if (TT.isZeroShadow(V1) && TT.isZeroShadow(V2)) return V1;
 
   // filter types
@@ -1520,6 +1723,7 @@ void TaintFunction::checkBounds(Value *Ptr, Instruction *Pos) {
 // Addr has alignment Align, and take the union of each of those shadows.
 Value *TaintFunction::loadShadow(Value *Addr, uint64_t Size, uint64_t Align,
                                  Instruction *Pos) {
+  if (!TrackMode) return TT.ZeroShadow;
   if (AllocaInst *AI = dyn_cast<AllocaInst>(Addr)) {
     const auto i = AllocaShadowMap.find(AI);
     if (i != AllocaShadowMap.end()) {
@@ -1556,6 +1760,7 @@ Value *TaintFunction::loadShadow(Value *Addr, uint64_t Size, uint64_t Align,
 
 void TaintVisitor::visitLoadInst(LoadInst &LI) {
   if (LI.getMetadata("nosanitize")) return;
+  if (!TrackMode) return;
   auto &DL = LI.getModule()->getDataLayout();
   uint64_t Size = DL.getTypeStoreSize(LI.getType());
   if (Size == 0) {
@@ -1583,6 +1788,7 @@ void TaintVisitor::visitLoadInst(LoadInst &LI) {
 
 void TaintFunction::storeShadow(Value *Addr, uint64_t Size, Align Alignment,
                                 Value *Shadow, Instruction *Pos) {
+  if (!TrackMode) return;
   if (AllocaInst *AI = dyn_cast<AllocaInst>(Addr)) {
     const auto i = AllocaShadowMap.find(AI);
     if (i != AllocaShadowMap.end()) {
@@ -1611,7 +1817,7 @@ void TaintFunction::storeShadow(Value *Addr, uint64_t Size, Align Alignment,
 
 void TaintVisitor::visitStoreInst(StoreInst &SI) {
   if (SI.getMetadata("nosanitize")) return;
-
+  if (!TrackMode) return;
   auto &DL = SI.getModule()->getDataLayout();
   uint64_t Size = DL.getTypeStoreSize(SI.getValueOperand()->getType());
   if (Size == 0)
@@ -1636,6 +1842,7 @@ void TaintVisitor::visitStoreInst(StoreInst &SI) {
 //}
 
 void TaintVisitor::visitBinaryOperator(BinaryOperator &BO) {
+  if (!TrackMode) return;
   if (BO.getMetadata("nosanitize")) return;
   if (BO.getType()->isFloatingPointTy()) return;
   Value *CombinedShadow =
@@ -1644,6 +1851,7 @@ void TaintVisitor::visitBinaryOperator(BinaryOperator &BO) {
 }
 
 void TaintVisitor::visitCastInst(CastInst &CI) {
+  if (!TrackMode) return;
   if (CI.getMetadata("nosanitize")) return;
   Value *CombinedShadow =
     TF.combineCastInstShadows(&CI, CI.getOpcode());
@@ -1651,6 +1859,7 @@ void TaintVisitor::visitCastInst(CastInst &CI) {
 }
 
 void TaintFunction::visitCmpInst(CmpInst *I) {
+  if (!TrackMode) return;
   Module *M = F->getParent();
   auto &DL = M->getDataLayout();
   IRBuilder<> IRB(I);
@@ -1672,6 +1881,7 @@ void TaintFunction::visitCmpInst(CmpInst *I) {
 }
 
 void TaintVisitor::visitCmpInst(CmpInst &CI) {
+  if (!TrackMode) return;
   if (CI.getMetadata("nosanitize")) return;
   // FIXME: integer only now
   if (!ClTraceFP && !isa<ICmpInst>(CI)) return;
@@ -1684,6 +1894,7 @@ void TaintVisitor::visitCmpInst(CmpInst &CI) {
 }
 
 void TaintFunction::visitSwitchInst(SwitchInst *I) {
+  if (!TrackMode) return;
   Module *M = F->getParent();
   auto &DL = M->getDataLayout();
   // get operand
@@ -1814,6 +2025,7 @@ Value *TaintFunction::visitAllocaInst(AllocaInst *I) {
 }
 
 void TaintVisitor::visitAllocaInst(AllocaInst &I) {
+  if (!TrackMode) return;
   bool AllLoadsStores = true;
   for (User *U : I.users()) {
     if (isa<LoadInst>(U)) {
@@ -1865,6 +2077,7 @@ void TaintVisitor::visitSelectInst(SelectInst &I) {
 }
 
 void TaintVisitor::visitMemSetInst(MemSetInst &I) {
+  if(!TrackMode) return;
   IRBuilder<> IRB(&I);
   Value *ValShadow = TF.getShadow(I.getValue());
   IRB.CreateCall(TF.TT.TaintSetLabelFn,
@@ -1874,6 +2087,7 @@ void TaintVisitor::visitMemSetInst(MemSetInst &I) {
 }
 
 void TaintVisitor::visitMemTransferInst(MemTransferInst &I) {
+  if(!TrackMode) return;
   IRBuilder<> IRB(&I);
   Value *DestShadow = TF.TT.getShadowAddress(I.getDest(), &I);
   Value *SrcShadow = TF.TT.getShadowAddress(I.getSource(), &I);
@@ -1914,6 +2128,7 @@ void TaintVisitor::visitMemTransferInst(MemTransferInst &I) {
 }
 
 void TaintVisitor::visitReturnInst(ReturnInst &RI) {
+  if (!TrackMode) return;
   if (!TF.IsNativeABI && RI.getReturnValue()) {
     switch (TF.IA) {
     case Taint::IA_TLS: {
@@ -1945,6 +2160,7 @@ void TaintVisitor::visitReturnInst(ReturnInst &RI) {
 }
 
 void TaintVisitor::visitCallBase(CallBase &CB) {
+  if (!TrackMode) return;
   Function *F = CB.getCalledFunction();
   if (CB.isInlineAsm()) {
     AttributeList AL;
@@ -2243,6 +2459,7 @@ void TaintVisitor::visitCallBase(CallBase &CB) {
 }
 
 void TaintVisitor::visitPHINode(PHINode &PN) {
+  if (!TrackMode) return;
   PHINode *ShadowPN =
       PHINode::Create(TF.TT.ShadowTy, PN.getNumIncomingValues(), "", &PN);
 
@@ -2258,6 +2475,7 @@ void TaintVisitor::visitPHINode(PHINode &PN) {
 }
 
 void TaintFunction::visitCondition(Value *Condition, Instruction *I) {
+  if (!TrackMode) return;
   IRBuilder<> IRB(I);
   // get operand
   Value *Shadow = getShadow(Condition);

@@ -48,7 +48,17 @@ struct dfsan_label_info {
   u16 op;
   u16 size; // FIXME: this limit the size of the operand to 65535 bits or bytes (in case of memcmp)
   u32 hash;
-} __attribute__((aligned (8), packed));
+  u32 tree_size;
+  u32 depth;
+  u8 flags;
+  u8 paddinng1;
+  u8 paddinng2;
+  u8 paddinng3;
+  u8 paddinng4;
+  u8 paddinng5;
+  u8 paddinng6;
+  u8 paddinng7;
+} __attribute__((packed));
 
 #ifndef PATH_MAX
 # define PATH_MAX 4096

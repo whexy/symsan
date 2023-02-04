@@ -67,6 +67,10 @@ static void find_obj(const char *argv0) {
 }
 
 static void check_type(char *name) {
+  char *use_track = getenv("USE_TRACK");
+  if (use_track) {
+    clang_type = CLANG_DFSAN_TYPE;
+  }
   if (!strcmp(name, "ko-clang++")) {
     is_cxx = 1;
   }
@@ -88,6 +92,7 @@ static u8 check_if_assembler(u32 argc, char **argv) {
 }
 
 static void add_runtime() {
+  if (clang_type == CLANG_DFSAN_TYPE) {
   cc_params[cc_par_cnt++] = "-Wl,--whole-archive";
   cc_params[cc_par_cnt++] = alloc_printf("%s/../lib/symsan/libdfsan_rt-x86_64.a", obj_path);
   cc_params[cc_par_cnt++] = "-Wl,--no-whole-archive";
@@ -95,6 +100,11 @@ static void add_runtime() {
       alloc_printf("-Wl,--dynamic-list=%s/../lib/symsan/libdfsan_rt-x86_64.a.syms", obj_path);
 
   cc_params[cc_par_cnt++] = alloc_printf("-Wl,-T%s/../lib/symsan/taint.ld", obj_path);
+  } else {
+    cc_params[cc_par_cnt++] = "-Wl,--whole-archive";
+    cc_params[cc_par_cnt++] = alloc_printf("%s/../lib/symsan/libruntime_fast.a", obj_path);
+    cc_params[cc_par_cnt++] = "-Wl,--no-whole-archive";
+  }
 
   if (is_cxx && !getenv("KO_USE_NATIVE_LIBCXX")) {
     cc_params[cc_par_cnt++] = "-Wl,--whole-archive";
@@ -142,6 +152,10 @@ static void add_taint_pass() {
   cc_params[cc_par_cnt++] = "-mllvm";
   cc_params[cc_par_cnt++] =
       alloc_printf("-taint-abilist=%s/../lib/symsan/dfsan_abilist.txt", obj_path);
+  if (clang_type == CLANG_DFSAN_TYPE) {
+    cc_params[cc_par_cnt++] = "-mllvm";
+    cc_params[cc_par_cnt++] = "-TrackMode";
+  }
 
   if (!getenv("KO_NO_NATIVE_ZLIB")) {
     cc_params[cc_par_cnt++] = "-mllvm";

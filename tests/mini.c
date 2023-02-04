@@ -40,6 +40,7 @@ int main(int argc, char **argv) {
       z != -100000003 && y >= 987654321 && y <= 987654325 && a == 123456789) {
     // CHECK-GEN: Good
     printf("Good\n");
+    abort();
   }
   else {
     // CHECK-ORIG: Bad
