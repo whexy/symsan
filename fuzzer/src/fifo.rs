@@ -12,6 +12,40 @@ use std::{
 };
 
 
+// additional info for gep
+pub struct GepMsg {
+  pub ptr_label: u32,
+  pub index_label: u32,
+  pub ptr: u64,
+  pub index: i64,
+  pub num_elems: u64,
+  pub elem_size: u64,
+  pub current_offset: u64,
+}
+
+impl GepMsg {
+  pub fn from_reader(mut rdr: impl Read) -> io::Result<Self> {
+    let ptr_label = rdr.read_u32::<LittleEndian>()?;
+    let index_label  = rdr.read_u32::<LittleEndian>()?;
+    let ptr  = rdr.read_u64::<LittleEndian>()?;
+    let index = rdr.read_i64::<LittleEndian>()?;
+    let num_elems  = rdr.read_u64::<LittleEndian>()?;
+    let elem_size  = rdr.read_u64::<LittleEndian>()?;
+    let current_offset  = rdr.read_u64::<LittleEndian>()?;
+
+    Ok(GepMsg{
+        ptr_label,
+        index_label,
+        ptr,
+        index,
+        num_elems,
+        elem_size,
+        current_offset,
+        })
+  }
+}
+
+
 pub struct PipeMsg {
   pub msgtype: u16, //gep, cond, add_constraints, strcmp
   pub flags: u16, 

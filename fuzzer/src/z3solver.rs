@@ -6,6 +6,7 @@ use std::{fs::File, io::{self, Read}};
 use std::io::BufReader;
 use std::io::BufRead;
 use crate::fifo::PipeMsg;
+use crate::fifo::GepMsg;
 use std::collections::HashSet;
 use std::collections::HashMap;
 use crate::op_def::*;
@@ -800,6 +801,8 @@ pub fn solve(shmid: i32, pipefd: RawFd, solution_queue: BlockingQueue<Solution>,
         }
       } else if msg.msgtype == 1 {
         //gep
+        let rawmsg = GepMsg::from_reader(&mut reader);
+        continue;
         if localcnt > 64 { continue; }
         let try_solve = hitcount <= 5 && localcnt <= 16;
         let rawsol = solve_gep(msg.label, msg.result, try_solve, &table, &ctx, &solver, &mut uf, &mut branch_deps, &fmemcmp_data);
