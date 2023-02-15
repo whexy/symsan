@@ -77,7 +77,7 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
   let val_op1 = unsafe { brw_op1.read_unaligned() };
   let brw_op2 = std::ptr::addr_of!(info.op2);
   let val_op2 = unsafe { brw_op2.read_unaligned() };
-  info!("{} = (l1:{}, l2:{}, op:{}, size:{}, op1:{}, op2:{})", label,val_l1,val_l2,val_op,val_size,val_op1,val_op2);
+  debug!("{} = (l1:{}, l2:{}, op:{}, size:{}, op1:{}, op2:{})", label,val_l1,val_l2,val_op,val_size,val_op1,val_op2);
   if expr_cache.contains_key(&label) {
     return Some(expr_cache[&label].clone())
   }

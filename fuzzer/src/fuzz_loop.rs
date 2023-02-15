@@ -166,6 +166,7 @@ pub fn grading_loop(
         order = sol.order;
         fid = sol.fid;
         ctx = sol.ctx;
+        addr = sol.addr;
         let mut_buf = mutate(buf, &sol.sol, sol.field_index, sol.field_size);
         let new_path = executor.run_sync(&mut_buf);
 
