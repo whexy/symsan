@@ -32,6 +32,7 @@ int main(int argc, char **argv) {
   if (memcmp(b, buf, 9) == 0) {
     // CHECK-GEN: Good
     printf("Good\n");
+    abort();
   }
   else {
     // CHECK-ORIG: Bad

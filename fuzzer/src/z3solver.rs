@@ -139,8 +139,8 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
                  }
                  let raw_left = if info.l1 != 0 { serialize(info.l1, ctx, table, cache, expr_cache, fmemcmp_data)
                  } else {
-                   if !fmemcmp_data.contains_key(&val_l2) { None } else {
-                     read_concrete(ctx,&fmemcmp_data[&val_l2])
+                   if !fmemcmp_data.contains_key(&label) { None } else {
+                     read_concrete(ctx,&fmemcmp_data[&label])
                    }
                  };
                  let raw_right = serialize(info.l2, ctx, table, cache, expr_cache, fmemcmp_data);
@@ -161,7 +161,6 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
                      }
                    }
                    cache.insert(label, merged);
-
                    return Some(ret);
                  } else {
                    return None;
@@ -819,6 +818,13 @@ pub fn solve(shmid: i32, pipefd: RawFd, solution_queue: BlockingQueue<Solution>,
       } else if msg.msgtype == 2 {
         //strcmp
         let mut data = Vec::new();
+        if let Ok(memcmp_data_label) = reader.read_u32::<LittleEndian>() {
+          if (memcmp_data_label != msg.label) {
+            break;
+          }
+        } else {
+          break;
+        }
         for _i in 0..msg.result as usize {
           if let Ok(cur) = reader.read_u8() {
             data.push(cur);
