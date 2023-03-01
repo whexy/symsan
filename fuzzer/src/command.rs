@@ -69,7 +69,7 @@ impl CommandOpt {
 
         let has_input_arg = pargs.contains(&"@@".to_string());
 
-        let clang_lib = Command::new("llvm-config")
+        let clang_lib = Command::new("llvm-config-12")
             .arg("--libdir")
             .output()
             .expect("Can't find llvm-config")
