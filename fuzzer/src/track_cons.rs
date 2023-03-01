@@ -73,7 +73,7 @@ pub fn scan_nested_tasks(pipefd: RawFd,
     }
     branch_local.insert((msg.addr,msg.ctx), localcnt);
 
-    info!("tid: {} label: {} result: {} addr: {} ctx: {} localcnt: {} type: {}",
+    debug!("tid: {} label: {} result: {} addr: {} ctx: {} localcnt: {} type: {}",
           msg.tid, msg.label, msg.result, msg.addr, msg.ctx, localcnt, msg.msgtype);
 
     if branch_hitcount.read().unwrap().contains_key(&(msg.addr,msg.ctx,localcnt, msg.result)) {
@@ -171,6 +171,7 @@ pub fn scan_nested_tasks(pipefd: RawFd,
       
       //if hitcount <= 5 && (!flipped) && label.6 != 3 && localcnt <= 16 {
       if is_flip {
+        count = count + 1;
         if !tb.submit_task_rust(&task, solution_queue.clone(), true, &inputs) {
           if msg.msgtype == 0 && config::HYBRID_SOLVER {
             if let Some(sol) =  solve_cond(msg.label, msg.result, table, &ctx, &solver) {
