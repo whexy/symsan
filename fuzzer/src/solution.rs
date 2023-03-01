@@ -13,7 +13,8 @@ pub struct Solution {
 impl Solution {
   pub fn new(sol: HashMap<u32,u8>, fid: u32, addr: u64, 
             ctx: u32, order: u32, direction: u64, 
-            field_index: usize, field_size: usize) -> Self {
+            field_index: usize, field_size: usize,
+            ) -> Self {
     Self {
       sol: sol,
       fid: fid,

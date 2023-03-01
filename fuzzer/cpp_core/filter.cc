@@ -96,7 +96,7 @@ bool isInterestingBranch(uint64_t pc, bool taken) {
 }
 
 extern "C" {
-  void init_core(bool saving_whole) { 
+  void init_core() { 
     memset(trace_map_, 0, kMapSize);
     memset(context_map_, 0, kMapSize);
     memset(virgin_map_, 0, kMapSize);
@@ -111,7 +111,8 @@ extern "C" {
     prev_loc_ = 0;
     //for ce testing
     //memset(trace_map_, 0, kMapSize);
-    //.memset(context_map_, 0, kMapSize);
+    //memset(context_map_, 0, kMapSize);
+    memset(virgin_map_, 0, kMapSize);
     visited_.clear();
   }
 

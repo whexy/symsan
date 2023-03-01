@@ -1,4 +1,4 @@
-#[repr(C,packed)]
+#[repr(C,packed)] 
 pub struct dfsan_label_info {
   pub l1: u32,
   pub l2: u32,
@@ -20,3 +20,4 @@ pub struct dfsan_label_info {
 }
 
 pub type UnionTable = [dfsan_label_info; 50331648];
+

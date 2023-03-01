@@ -20,7 +20,7 @@ use fastgen_common::config;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use blockingqueue::BlockingQueue;
-use crate::solution::*;
+use crate::parser::init_engine;
 
 pub fn fuzz_main(
     in_dir: &str,
@@ -38,6 +38,7 @@ pub fn fuzz_main(
 
   let (seeds_dir, angora_out_dir) = initialize_directories(in_dir, out_dir, sync_afl);
 
+  let restart = in_dir == "-";
   let command_option = command::CommandOpt::new(
       track_target,
       pargs,
@@ -47,7 +48,6 @@ pub fn fuzz_main(
       );
   info!("{:?}", command_option);
 
-  let restart = in_dir == "-";
   check_dep::check_dep(in_dir, out_dir, &command_option);
 
   let depot = Arc::new(depot::Depot::new(seeds_dir, &angora_out_dir));
@@ -65,10 +65,11 @@ pub fn fuzz_main(
       command_option.specify(0),
       global_branches.clone(),
       depot.clone(),
-      0,
+      0,  //shmid is zero
       false, //not grading
       forklock.clone(),
       );
+
 
   sync::sync_depot(&mut executor, running.clone(), &depot.dirs.seeds_dir);
 
@@ -76,9 +77,10 @@ pub fn fuzz_main(
     error!("Please ensure that seed directory - {:?} has ang file", depot.dirs.seeds_dir);
   }
 
-//  unsafe { init_core(config::SAVING_WHOLE, config::USE_CODECACHE); }
   unsafe { init_core(); }
+  init_engine();
   let mut handlers = vec![];
+
   for g in 0.._num_graders
   {
     let r = running.clone();
@@ -95,7 +97,9 @@ pub fn fuzz_main(
         });
     handlers.push(handle);
   }
+
   { 
+
     let r = running.clone();
     let d = depot.clone();
     let b = global_branches.clone();
@@ -104,26 +108,12 @@ pub fn fuzz_main(
     let blist = branch_fliplist.clone();
     let fk = forklock.clone();
     let bqc = bq.clone();
-    let handle = thread::spawn(move || {
+    let handle = thread::Builder::new().stack_size(64 * 1024 * 1024).spawn(move || {
         fuzz_loop::fuzz_loop(r, cmd, d, b, bg, blist, restart, fk, bqc);
-        });
+        }).unwrap();
     handlers.push(handle);
   }
-  if _num_jobs > 1
-  { 
-    let r = running.clone();
-    let d = depot.clone();
-    let b = global_branches.clone();
-    let cmd = command_option.specify(3);
-    let bg = branch_gencount.clone();
-    let blist = branch_fliplist.clone();
-    let fk = forklock.clone();
-    let bqc = bq.clone();
-    let handle = thread::spawn(move || {
-        fuzz_loop::fuzz_loop(r, cmd, d, b, bg, blist, restart, fk, bqc);
-        });
-    handlers.push(handle);
-  } 
+   
 
   main_thread_sync(
     out_dir,
@@ -153,7 +143,7 @@ fn initialize_directories(in_dir: &str, out_dir: &str, sync_afl: bool) -> (PathB
     fs::create_dir(&angora_out_dir).expect("Output directory has existed!");
   }
 
-
+  
 
   let workdir = PathBuf::from("angora");
 
@@ -195,6 +185,7 @@ fn main_thread_sync(
   sync_afl: bool,
   running: Arc<AtomicBool>,
   executor: &mut executor::Executor,
+//  depot: Arc<Depot>,
 ) {
   let sync_dir = Path::new(out_dir);
   let mut synced_ids = HashMap::new();

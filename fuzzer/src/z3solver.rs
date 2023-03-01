@@ -53,7 +53,7 @@ pub fn read_concrete<'a>(ctx: &'a Context, data: &Vec<u8>) -> Option<z3::ast::Dy
 
 pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
     cache: &mut HashMap<u32, HashSet<u32>>, 
-    expr_cache: &mut HashMap<u32, z3::ast::Dynamic<'a>>, fmemcmp_data: &HashMap<u32, Vec<u8>>) -> Option<z3::ast::Dynamic<'a>> {
+    expr_cache: &mut HashMap<u32, z3::ast::Dynamic<'a>>) -> Option<z3::ast::Dynamic<'a>> {
 
   if label < 1 || label == std::u32::MAX {
     return None;
@@ -107,7 +107,7 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
                  return Some(z3::ast::Dynamic::from(node));
                },
                DFSAN_ZEXT => {
-                 let rawnode = serialize(info.l1, ctx, table, cache, expr_cache, fmemcmp_data);
+                 let rawnode = serialize(info.l1, ctx, table, cache, expr_cache);
                  if let Some(node) = rawnode {
                    match node.sort_kind() {
                      z3::SortKind::Bool => {
@@ -133,43 +133,8 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
                  }
                },
 
-               DFSAN_FMEMCMP => {
-                 //invalid memory operation  
-                 if  info.l2 == 0 {
-                   return None;
-                 }
-                 let raw_left = if info.l1 != 0 { serialize(info.l1, ctx, table, cache, expr_cache, fmemcmp_data)
-                 } else {
-                   if !fmemcmp_data.contains_key(&label) { None } else {
-                     read_concrete(ctx,&fmemcmp_data[&label])
-                   }
-                 };
-                 let raw_right = serialize(info.l2, ctx, table, cache, expr_cache, fmemcmp_data);
-                 if raw_left.is_some() && raw_right.is_some() {
-                   let equal = raw_left.unwrap()._eq(&raw_right.unwrap());
-                   let base = equal.ite(&ast::BV::from_i64(ctx,0,32), 
-                       &ast::BV::from_i64(ctx,1,32));
-                   let ret = z3::ast::Dynamic::from(base);
-                   let mut merged = HashSet::new();
-                   if info.l1 >= CONST_OFFSET {
-                     for &v in &cache[&val_l1] {
-                       merged.insert(v);
-                     }
-                   }
-                   if info.l2 >= CONST_OFFSET {
-                     for &v in &cache[&val_l2] {
-                       merged.insert(v);
-                     }
-                   }
-                   cache.insert(label, merged);
-                   return Some(ret);
-                 } else {
-                   return None;
-                 }
-               },
-
                DFSAN_SEXT => {
-                 let rawnode = serialize(info.l1, ctx, table, cache, expr_cache, fmemcmp_data);
+                 let rawnode = serialize(info.l1, ctx, table, cache, expr_cache);
                  if let Some(node) = rawnode {
                    match node.sort_kind() {
                      z3::SortKind::Bool => {
@@ -194,7 +159,7 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
                  }
                },
                DFSAN_TRUNC => {
-                 let rawnode = serialize(info.l1, ctx, table, cache, expr_cache, fmemcmp_data);
+                 let rawnode = serialize(info.l1, ctx, table, cache, expr_cache);
                  if let Some(node) = rawnode {
                    let base = node.as_bv().unwrap();
                    let ret = z3::ast::Dynamic::from(base.extract(info.size as u32 - 1, 0));
@@ -206,7 +171,7 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
                  }
                },
                DFSAN_EXTRACT => {
-                 let rawnode = serialize(info.l1, ctx, table, cache, expr_cache, fmemcmp_data);
+                 let rawnode = serialize(info.l1, ctx, table, cache, expr_cache);
                  if let Some(node) = rawnode {
                    let base = node.as_bv().unwrap();
                    let ret = z3::ast::Dynamic::from(base.extract(info.op2 as u32 + info.size as u32 - 1, info.op2 as u32));
@@ -221,7 +186,7 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
                  if info.l2 == 0 || info.size != 1 {
                    return None;
                  } else {
-                   let rawnode = serialize(info.l2, ctx, table, cache, expr_cache, fmemcmp_data);
+                   let rawnode = serialize(info.l2, ctx, table, cache, expr_cache);
                    if let Some(node) = rawnode {
                      // Only handle LNot
                      if node.sort_kind() == z3::SortKind::Bool {
@@ -241,7 +206,7 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
                  if info.l2 == 0  {
                    return None;
                  } else {
-                   let rawnode = serialize(info.l2, ctx, table, cache, expr_cache, fmemcmp_data);
+                   let rawnode = serialize(info.l2, ctx, table, cache, expr_cache);
                    if let Some(node) = rawnode {
                      let ret = z3::ast::Dynamic::from(-node.as_bv().unwrap());
                      cache.insert(label, cache[&val_l2].clone());
@@ -260,7 +225,7 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
   let mut right;
   let mut size1: u32 = info.size as u32;
   if info.l1 >= 1 {
-    let opt_left = serialize(info.l1, ctx, table, cache, expr_cache, fmemcmp_data);
+    let opt_left = serialize(info.l1, ctx, table, cache, expr_cache);
     if opt_left.is_none() {
       return None;
     } else {
@@ -277,7 +242,7 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
     }
   }
   if info.l2 >= 1 {
-    let opt_right = serialize(info.l2, ctx, table, cache, expr_cache, fmemcmp_data);
+    let opt_right = serialize(info.l2, ctx, table, cache, expr_cache);
     if opt_right.is_none() {
       return None;
     } else {
@@ -474,46 +439,9 @@ pub fn generate_solution(ctx: &Context, m: &Model, inputs: &HashSet<u32>) -> Has
   sol
 }
 
-pub fn add_cons<'a>(label: u32, table: &UnionTable, 
-    ctx: &'a Context, solver: &Solver, 
-    uf: &mut UnionFind, branch_deps: &mut Vec<Option<BranchDep<'a>>>, fmemcmp_data: &HashMap<u32, Vec<u8>>) {
-
-
-  if label == 0 {
-    return;
-  }
-  let info = &table[label as usize];
-
-  let mut cache = HashMap::new();
-  let mut expr_cache = HashMap::new();
-
-  let rawcond = serialize(label, ctx, table, &mut cache, &mut expr_cache, fmemcmp_data);
-
-
-  if let Some(cond) = rawcond {
-
-    let mut deps = HashSet::new();
-    for &v in &cache[&label] {
-      deps.insert(v);
-    } 
-
-    let v0 = union(uf, &deps) as usize;
-
-    if cond.as_bool().is_none() {
-      error!("condition must be a bv for gep");
-      return;
-    }
-    //preserve dependencies
-    //preserve
-    preserve(cond.as_bool().unwrap(), v0, branch_deps);
-  }
-  return;
-}
-
-/*
-pub fn solve_fmemcmp(label: u32, data: &Vec<u8>, size: u64, try_solve: bool, table: &UnionTable, 
-    ctx: &Context, solver: &Solver, fmemcmp_data: &HashMap<u32, Vec<u8>>) -> Option<HashMap<u32,u8>> {
-
+pub fn solve_cond<'a>(label: u32, direction: u64, table: &UnionTable, 
+    ctx: &'a Context, solver: &Solver) -> Option<HashMap<u32,u8>> {
+  let result = z3::ast::Bool::from_bool(ctx, direction == 1);
 
   let mut ret = None;
   if label == 0 {
@@ -523,346 +451,28 @@ pub fn solve_fmemcmp(label: u32, data: &Vec<u8>, size: u64, try_solve: bool, tab
   let mut cache = HashMap::new();
   let mut expr_cache = HashMap::new();
 
-  let rawcond = serialize(label, ctx, table, &mut cache, &mut expr_cache, fmemcmp_data);
+  let rawcond = serialize(label, ctx, table, &mut cache, &mut expr_cache);
 
+  let mut deps = HashSet::new();
+  for &v in &cache[&label] {
+    deps.insert(v);
+  }
 
   if let Some(cond) = rawcond {
-
-    let mut deps = HashSet::new();
-    for &v in &cache[&label] {
-      deps.insert(v);
-    } 
-
-    if try_solve {
-      if cond.as_bv().is_none() {
-        error!("condition must be a bv for gep");
+      if cond.as_bool().is_none() {
+        error!("condition must be a bool");
         return ret;
       }
-      let mut op_concrete  = ast::BV::from_u64(ctx, data[0] as u64, 8);
-      for i in 1..data.len() {
-        op_concrete = ast::BV::from_u64(ctx, data[i] as u64, 8).concat(&op_concrete);
-      }
       solver.reset();
-      solver.assert(&cond._eq(&z3::ast::Dynamic::from_ast(&op_concrete)));
+      solver.assert(&z3::ast::Ast::distinct(ctx, &[&cond, &z3::ast::Dynamic::from_ast(&result)])); 
       let mut res = solver.check();
       if res == z3::SatResult::Sat  {
         debug!("sat opt");
         let m = solver.get_model().unwrap();
         let sol_opt = generate_solution(ctx, &m, &deps);
         ret = Some(sol_opt);
-      } else {
-        debug!("not sat fmemcmp");
       }
-    }
   }
 
   ret
-}
-*/
-
-
-pub fn solve_gep<'a>(label: u32, result: u64, try_solve: bool, table: &UnionTable, 
-    ctx: &'a Context, solver: &Solver, 
-    uf: &mut UnionFind, branch_deps: &mut Vec<Option<BranchDep<'a>>>, fmemcmp_data: &HashMap<u32, Vec<u8>>) -> (Option<HashMap<u32,u8>>, Option<HashMap<u32,u8>>) {
-
-
-  let mut ret = (None, None);
-  if label == 0 {
-    return ret;
-  }
-
-  let info = &table[label as usize];
-
-  let result = z3::ast::BV::from_u64(ctx,result,info.size as u32);
-
-  let mut cache = HashMap::new();
-  let mut expr_cache = HashMap::new();
-
-  let rawcond = serialize(label, ctx, table, &mut cache, &mut expr_cache, fmemcmp_data);
-
-
-  if let Some(cond) = rawcond {
-
-    let mut deps = HashSet::new();
-    for &v in &cache[&label] {
-      deps.insert(v);
-    } 
-
-    let v0 = union(uf, &deps) as usize;
-
-    if try_solve {
-      if cond.as_bv().is_none() {
-        error!("condition must be a bv for gep");
-        return ret;
-      }
-      solver.reset();
-      solver.assert(&z3::ast::Ast::distinct(ctx, &[&cond, &z3::ast::Dynamic::from_ast(&result)]));
-      debug!("{:}", solver);
-      let mut res = solver.check();
-      if res == z3::SatResult::Sat  {
-        debug!("sat opt");
-        let m = solver.get_model().unwrap();
-        let sol_opt = generate_solution(ctx, &m, &deps);
-        ret.0 = Some(sol_opt);
-        solver.push(); 
-        let alldeps = add_dependencies(solver, v0, uf, branch_deps);
-        res = solver.check();
-        if res == z3::SatResult::Sat  {
-          debug!("sat opt");
-          let m = solver.get_model().unwrap();
-          let sol_nest = generate_solution(ctx, &m, &alldeps);
-          ret.1 = Some(sol_nest);
-        }
-      }
-    }
-    //preserve dependencies
-    //preserve
-    let path_cond = cond._eq(&z3::ast::Dynamic::from_ast(&result));
-    preserve(path_cond, v0, branch_deps);
-  }
-
-  ret
-}
-
-pub fn solve_cond<'a>(label: u32, direction: u64, try_solve: bool, table: &UnionTable, 
-    ctx: &'a Context, solver: &Solver, 
-    uf: &mut UnionFind, branch_deps: &mut Vec<Option<BranchDep<'a>>>, fmemcmp_data: &HashMap<u32, Vec<u8>>) -> (Option<HashMap<u32,u8>>, Option<HashMap<u32,u8>>) {
-  let result = z3::ast::Bool::from_bool(ctx, direction == 1);
-  let result_bv = z3::ast::BV::from_i64(ctx, direction as i64, 1);
-
-  let mut ret = (None, None);
-  if label == 0 {
-    return ret;
-  }
-
-  let mut cache = HashMap::new();
-  let mut expr_cache = HashMap::new();
-
-  let rawcond = serialize(label, ctx, table, &mut cache, &mut expr_cache, fmemcmp_data);
-
-
-  if let Some(cond) = rawcond {
-
-    let mut deps = HashSet::new();
-    for &v in &cache[&label] {
-      deps.insert(v);
-    } 
-
-    let v0 = union(uf, &deps) as usize;
-
-    if try_solve {
-      solver.reset();
-      if cond.as_bool().is_none() {
-        solver.assert(&z3::ast::Ast::distinct(ctx, &[&cond, &z3::ast::Dynamic::from_ast(&result_bv)]));
-      } else {
-        solver.assert(&z3::ast::Ast::distinct(ctx, &[&cond, &z3::ast::Dynamic::from_ast(&result)])); 
-      }
-      let mut res = solver.check();
-      if res == z3::SatResult::Sat  {
-        debug!("sat opt");
-        let m = solver.get_model().unwrap();
-        let sol_opt = generate_solution(ctx, &m, &deps);
-        ret.0 = Some(sol_opt);
-        solver.push(); 
-        let alldeps = add_dependencies(solver, v0, uf, branch_deps);
-        res = solver.check();
-        if res == z3::SatResult::Sat  {
-          debug!("sat opt");
-          let m = solver.get_model().unwrap();
-          let sol_nest = generate_solution(ctx, &m, &alldeps);
-          ret.1 = Some(sol_nest);
-        }
-      }
-    }
-    //preserve dependencies
-    //preserve
-    let path_cond = cond._eq(&z3::ast::Dynamic::from_ast(&result));
-    if cond.as_bool().is_none() {
-      let path_cond = cond._eq(&z3::ast::Dynamic::from_ast(&result_bv));
-      preserve(path_cond, v0, branch_deps);
-    } else {
-      let path_cond = cond._eq(&z3::ast::Dynamic::from_ast(&result));
-      preserve(path_cond, v0, branch_deps);
-    }
-  }
-
-  ret
-}
-
-fn preserve<'a>(cond: z3::ast::Bool<'a>, v0: usize, branch_deps: &mut Vec<Option<BranchDep<'a>>>) {
-  //add to nested dependency tree
-  let mut is_empty = false;
-  {
-    let deps_opt = &branch_deps[v0 as usize];
-    if deps_opt.is_none() {
-      is_empty = true;
-    }
-  }
-  if is_empty {
-    branch_deps[v0 as usize] = Some(BranchDep {cons_set: Vec::new()});
-  }
-  let deps_opt = &mut branch_deps[v0 as usize];
-  let deps = deps_opt.as_mut().unwrap();
-  deps.cons_set.push(z3::ast::Dynamic::from(cond));
-}
-
-fn add_dependencies(
-    solver: &Solver,
-    v0: usize,
-    uf: &mut UnionFind,
-    branch_deps: &mut Vec<Option<BranchDep>>,
-    ) -> HashSet<u32> {
-  let mut res = HashSet::new();
-  for off in uf.get_set(v0 as usize) {
-    res.insert(off as u32);
-    let deps_opt = &branch_deps[off as usize];
-    if let Some(deps) = deps_opt {
-      for cons in &deps.cons_set {
-        solver.assert(&cons.as_bool().unwrap());
-      }
-    }
-  }
-  res
-}
-
-pub fn solve(shmid: i32, pipefd: RawFd, solution_queue: BlockingQueue<Solution>, tainted_size: usize,
-    branch_gencount: &Arc<RwLock<HashMap<(u64,u32,u32,u64), u32>>>,
-    branch_fliplist: &Arc<RwLock<HashSet<(u64,u32,u32,u64)>>>,
-    branch_hitcount: &Arc<RwLock<HashMap<(u64,u32,u32,u64), u32>>>) {
-  info!("solve shmid {} and pipefd {}", shmid, pipefd);
-  let rawptr = unsafe { libc::shmat(shmid, std::ptr::null(), 0) };
-  let ptr = unsafe { rawptr as *mut UnionTable};
-  let table = unsafe { & *ptr };
-  let mut cfg = Config::new();  
-  unsafe { start_session() };
-  cfg.set_timeout_msec(10000);
-  let mut fmemcmp_data = HashMap::new();
-  let ctx = Context::new(&cfg);
-  let solver = Solver::new(&ctx);
-  let f = unsafe { File::from_raw_fd(pipefd) }; 
-  let mut branch_deps : Vec<Option<BranchDep>> = vec![None;tainted_size];
-  let mut uf = UnionFind::<usize>::new(tainted_size);
-  let mut reader = BufReader::new(f);
-  let t_start = time::Instant::now();
-  let mut branch_local = HashMap::<(u64,u32),u32>::new();
-  loop {
-    let rawmsg = PipeMsg::from_reader(&mut reader);
-    if let Ok(msg) = rawmsg {
-
-      let mut hitcount = 1;
-      let mut gencount = 0;
-      let mut flipped = false;
-      let mut localcnt = 1;
-
-      if msg.addr != 0 {
-        if branch_local.contains_key(&(msg.addr,msg.ctx)) {
-          localcnt = *branch_local.get(&(msg.addr,msg.ctx)).unwrap();
-          localcnt += 1;
-        }
-      }
-      branch_local.insert((msg.addr,msg.ctx),localcnt);
-
-      info!("tid: {} label: {} result: {} addr: {} ctx: {} localcnt: {} type: {}",
-          msg.tid, msg.label, msg.result, msg.addr, msg.ctx, localcnt, msg.msgtype);
-
-      if branch_hitcount.read().unwrap().contains_key(&(msg.addr,msg.ctx,localcnt,msg.result)) {
-        hitcount = *branch_hitcount.read().unwrap().get(&(msg.addr,msg.ctx,localcnt,msg.result)).unwrap();
-        hitcount += 1;
-      }
-      branch_hitcount.write().unwrap().insert((msg.addr,msg.ctx,localcnt,msg.result), hitcount);
-
-      if branch_fliplist.read().unwrap().contains(&(msg.addr,msg.ctx,localcnt,msg.result)) {
-        //info!("the branch is flipped");
-        flipped = true;
-      }
-
-      if branch_gencount.read().unwrap().contains_key(&(msg.addr,msg.ctx,localcnt,msg.result)) {
-        gencount = *branch_gencount.read().unwrap().get(&(msg.addr,msg.ctx,localcnt,msg.result)).unwrap();
-      }
-
-      if msg.msgtype == 0 {
-        if localcnt > 64 { continue; }
-        let try_solve = if config::QSYM_FILTER { unsafe { qsym_filter(msg.addr, msg.result == 1) } }
-        else { hitcount <= 5 && (!flipped) && localcnt <= 16 };
-        let rawsol = solve_cond(msg.label, msg.result, try_solve, &table, &ctx, &solver, &mut uf, &mut branch_deps, &fmemcmp_data);
-        if let Some(sol) = rawsol.0 {
-            info!("find a solution!");
-          let sol_size = sol.len();
-          let rgd_sol = Solution::new(sol, msg.tid, msg.addr, msg.ctx,
-              localcnt,  msg.result, 0, sol_size);
-          solution_queue.push(rgd_sol);
-        }
-        if let Some(sol) = rawsol.1 {
-            info!("find a solution!");
-          let sol_size = sol.len();
-          let rgd_sol = Solution::new(sol, msg.tid, msg.addr, msg.ctx,
-              localcnt,  msg.result, 0, sol_size);
-          solution_queue.push(rgd_sol);
-        }
-      } else if msg.msgtype == 1 {
-        //gep
-        let rawmsg = GepMsg::from_reader(&mut reader);
-        continue;
-        if localcnt > 64 { continue; }
-        let try_solve = hitcount <= 5 && localcnt <= 16;
-        let rawsol = solve_gep(msg.label, msg.result, try_solve, &table, &ctx, &solver, &mut uf, &mut branch_deps, &fmemcmp_data);
-        if let Some(sol) = rawsol.0 {
-          let sol_size = sol.len();
-          let rgd_sol = Solution::new(sol, msg.tid, msg.addr, msg.ctx,
-              localcnt,  msg.result, 0, sol_size);
-          solution_queue.push(rgd_sol);
-        }
-        if let Some(sol) = rawsol.1 {
-          let sol_size = sol.len();
-          let rgd_sol = Solution::new(sol, msg.tid, msg.addr, msg.ctx,
-              localcnt,  msg.result, 0, sol_size);
-          solution_queue.push(rgd_sol);
-        }
-      } else if msg.msgtype == 2 {
-        //strcmp
-        let mut data = Vec::new();
-        if let Ok(memcmp_data_label) = reader.read_u32::<LittleEndian>() {
-          if (memcmp_data_label != msg.label) {
-            break;
-          }
-        } else {
-          break;
-        }
-        for _i in 0..msg.result as usize {
-          if let Ok(cur) = reader.read_u8() {
-            data.push(cur);
-          } else {
-            break;
-          }
-        }
-        if data.len() < msg.result as usize {
-          break;
-        }
-        //if localcnt > 64 { continue; }
-        //let try_solve = hitcount <=5;
-/*
-        let try_solve = true;
-        let rawsol = solve_fmemcmp(msg.label, &data, msg.result, try_solve, &table, &ctx, &solver, &fmemcmp_data);
-        if let Some(sol) = rawsol {
-          let sol_size = sol.len();
-          let rgd_sol = Solution::new(sol, msg.tid, msg.addr, msg.ctx,
-              localcnt,  msg.result, 0, sol_size, msg.bid, msg.sctx, false, 0, 0);
-          solution_queue.push(rgd_sol);
-        }
-*/
-        fmemcmp_data.insert(msg.label, data);
-
-      } else if msg.msgtype == 3 {
-        //offset
-        add_cons(msg.label, &table, &ctx, &solver, &mut uf, &mut branch_deps, &fmemcmp_data);
-      } else {
-        //size
-      }
-      debug!("solving eplased {}", t_start.elapsed().as_secs());
-      if t_start.elapsed().as_secs() > 90 { break; }
-    } else {
-      break;
-    }
-  }
-  unsafe { libc::shmdt(rawptr) };
 }

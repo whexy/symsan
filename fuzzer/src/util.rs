@@ -1,9 +1,18 @@
 use crate::rgd::*;
 use crate::op_def::*;
 use num_traits::FromPrimitive;
+use protobuf::Message; 
+use protobuf::CodedInputStream;
+use protobuf::CodedOutputStream;
+use std::fs::File;
+use std::io::prelude::*;
+use std::path::Path;
+use std::fs::OpenOptions;
+use std::io::BufWriter;
+use std::io::BufReader;
+use crate::search_task::SearchTask;
 
-pub fn to_rgd_op(op: u32) -> u32 {
-  match op {
+pub fn to_rgd_op(op: u32) -> u32 { match op {
     DFSAN_BVEQ => RGD::Equal as u32,
     DFSAN_BVNEQ => RGD::Distinct as u32,
     DFSAN_BVSGT => RGD::Sgt as u32,
@@ -31,6 +40,7 @@ fn get_name(op: u32) -> String {
     Some(RGD::Ult) => "ult".to_string(),
     Some(RGD::Ule) => "ule".to_string(),
     Some(RGD::Bool) => "bool".to_string(),
+    Some(RGD::Constant) => "constant".to_string(),
     Some(RGD::Read) => "read".to_string(),
     Some(RGD::Concat) => "concat".to_string(),
     Some(RGD::Extract) => "extract".to_string(),
@@ -51,6 +61,10 @@ fn get_name(op: u32) -> String {
     Some(RGD::Shl) => "shl".to_string(),
     Some(RGD::LShr) => "lshr".to_string(),
     Some(RGD::AShr) => "ashr".to_string(),
+    Some(RGD::LNot) => "lnot".to_string(),
+    Some(RGD::LAnd) => "land".to_string(),
+    Some(RGD::LOr) => "lor".to_string(),
+    Some(RGD::Uninit) => "Uninit".to_string(),
     _ => "".to_string(),
   }
 }
@@ -81,10 +95,50 @@ pub fn print_node(node: &AstNode) {
 }
 
 pub fn print_task(task: &SearchTask) {
-  for cons in task.get_constraints() {
+  for cons_set in &task.flip_cons.0 {
+    for cons in cons_set {
+    println!("constraint label is {}", cons.get_label());
     print_node(cons.get_node());
+/*
+    for ainput in cons.get_meta().get_inputs() {
+      println!("offset {} iv {}", ainput.get_offset(), ainput.get_iv());
+    }
+    for aarg in cons.get_meta().get_args() {
+      println!("isinput {} iv {}", aarg.get_isinput(), aarg.get_v());
+    }
+    for amap in cons.get_meta().get_map() {
+      println!("offset {} iv {}", amap.get_k(), amap.get_v());
+    }
+*/
+  }
   }
 }
+
+pub fn save_request<M: Message>(message: &M, p: &Path) -> std::io::Result<()> {
+  //open file for write
+  let file = OpenOptions::new().append(true).create(true).open(p)?;
+  let mut buf_writer = BufWriter::new(file); 
+  let mut outstream = CodedOutputStream::new(&mut buf_writer);
+  println!("write message with size {}", message.compute_size());
+  message.write_length_delimited_to(&mut outstream);
+  outstream.flush()?;
+  Ok(())
+}
+
+pub fn load_request<M: Message>(p: &Path) -> std::io::Result<Vec<M>> {
+  let file = File::open(p)?;
+  let mut buf_reader = BufReader::new(file);
+  let mut instream = CodedInputStream::new(&mut buf_reader);
+  instream.set_recursion_limit(10000);
+  //let size = instream.read_raw_varint32()?;
+  //let limit = instream.push_limit(size.into())?; 
+  let mut res = Vec::new();
+  while let Ok(msg) = instream.read_message() {
+    res.push(msg);
+  }
+  Ok(res)
+}
+
 
 #[inline(always)]
 pub fn xxhash(h1: u32, h2: u32, h3: u32) -> u32 {
@@ -110,3 +164,4 @@ pub fn xxhash(h1: u32, h2: u32, h3: u32) -> u32 {
 
   h32
 }
+

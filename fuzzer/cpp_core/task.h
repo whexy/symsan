@@ -106,8 +106,10 @@ struct FUT {
 				max_const_num = constraints[i]->const_num;
 		}
 
-		scratch_args = (uint64_t*)malloc((2 + inputs.size() + max_const_num) * sizeof(uint64_t));
+    //FIXME: it may overflow
+		scratch_args = (uint64_t*)malloc((2 + inputs.size() + max_const_num + 100) * sizeof(uint64_t));
     ctx = new SContext(inputs.size(), constraints.size());
+    
 	}
 
   void load_hint(std::unordered_map<uint32_t,uint8_t> &hint_solution) {// load hint

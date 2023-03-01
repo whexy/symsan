@@ -16,3 +16,4 @@ add_library(gd
   STATIC
   filter.cc
 )
+
