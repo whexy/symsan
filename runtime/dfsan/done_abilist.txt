@@ -422,3 +422,8 @@ fun:jpeg_simd_cpu_support=uninstrumented
 fun:jpeg_simd_cpu_support=discard
 fun:jsimd_*=uninstrumented
 fun:jsimd_*=discard
+
+# lzma 
+
+fun:lzma_*=uninstrumented
+fun:lzma_*=discard
