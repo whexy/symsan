@@ -457,7 +457,12 @@ fun:WelsEmms=discard
 fun:McCopyWidthEq16_sse3=discard
 
 
-
 # Used in libpcap
 fun:ibv_*=uninstrumented
 fun:ibv_*=discard 
+
+# Used in php
+fun:make_fcontext=uninstrumented
+fun:make_fcontext=discard
+fun:jump_fcontext=uninstrumented
+fun:jump_fcontext=discard
