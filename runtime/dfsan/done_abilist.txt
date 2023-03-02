@@ -427,3 +427,15 @@ fun:jsimd_*=discard
 
 fun:lzma_*=uninstrumented
 fun:lzma_*=discard
+
+
+# SIMD for h264
+
+fun:*_ssse3=uninstrumented
+fun:*_ssse3=discard
+fun:*_sse2=uninstrumented
+fun:*_sse2=discard
+fun:*_avx2=uninstrumented
+fun:*_avx2=discard
+fun:*_mmx=uninstrumented
+fun:*_mmx=discard
