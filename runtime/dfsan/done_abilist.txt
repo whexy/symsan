@@ -416,3 +416,9 @@ fun:__afl_manual_init=discard
 # sqlite
 fun:fcntl64=uninstrumented
 fun:fcntl64=discard
+
+# libjpeg
+fun:jpeg_simd_cpu_support=uninstrumented
+fun:jpeg_simd_cpu_support=discard
+fun:jsimd_*=uninstrumented
+fun:jsimd_*=discard
