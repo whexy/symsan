@@ -417,19 +417,18 @@ fun:__afl_manual_init=discard
 fun:fcntl64=uninstrumented
 fun:fcntl64=discard
 
-# libjpeg
+# Used in libjpeg 
 fun:jpeg_simd_cpu_support=uninstrumented
 fun:jpeg_simd_cpu_support=discard
 fun:jsimd_*=uninstrumented
 fun:jsimd_*=discard
 
-# lzma 
+# Used in libxml2
 
 fun:lzma_*=uninstrumented
 fun:lzma_*=discard
 
-
-# SIMD for h264
+# Used in openh264
 
 fun:*_ssse3=uninstrumented
 fun:*_ssse3=discard
@@ -439,3 +438,7 @@ fun:*_avx2=uninstrumented
 fun:*_avx2=discard
 fun:*_mmx=uninstrumented
 fun:*_mmx=discard
+
+# Used in libpcap
+fun:ibv_*=uninstrumented
+fun:ibv_*=discard 
