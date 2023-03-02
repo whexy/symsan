@@ -438,6 +438,25 @@ fun:*_avx2=uninstrumented
 fun:*_avx2=discard
 fun:*_mmx=uninstrumented
 fun:*_mmx=discard
+fun:WelsCPUId=uninstrumented
+fun:WelsCPUSupportAVX=uninstrumented
+fun:WelsCPUIdVerify=uninstrumented
+fun:WelsCPUFeatureDetect=uninstrumented
+fun:WelsCPUDetectAVX512=uninstrumented
+fun:WelsCPUSupportFMA=uninstrumented
+fun:WelsEmms=uninstrumented
+fun:McCopyWidthEq16_sse3=uninstrumented
+
+fun:WelsCPUId=discard
+fun:WelsCPUSupportAVX=discard
+fun:WelsCPUIdVerify=discard
+fun:WelsCPUFeatureDetect=discard
+fun:WelsCPUDetectAVX512=discard
+fun:WelsCPUSupportFMA=discard
+fun:WelsEmms=discard
+fun:McCopyWidthEq16_sse3=discard
+
+
 
 # Used in libpcap
 fun:ibv_*=uninstrumented
