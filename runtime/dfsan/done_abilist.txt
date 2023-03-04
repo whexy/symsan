@@ -466,8 +466,3 @@ fun:make_fcontext=uninstrumented
 fun:make_fcontext=discard
 fun:jump_fcontext=uninstrumented
 fun:jump_fcontext=discard
-
-
-# Used in bloaty
-fun:*google8protobuf*=uninstrumented
-fun:*google8protobuf*=discard
