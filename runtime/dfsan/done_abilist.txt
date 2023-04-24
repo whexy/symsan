@@ -416,3 +416,53 @@ fun:__afl_manual_init=discard
 # sqlite
 fun:fcntl64=uninstrumented
 fun:fcntl64=discard
+
+# Used in libjpeg 
+fun:jpeg_simd_cpu_support=uninstrumented
+fun:jpeg_simd_cpu_support=discard
+fun:jsimd_*=uninstrumented
+fun:jsimd_*=discard
+
+# Used in libxml2
+
+fun:lzma_*=uninstrumented
+fun:lzma_*=discard
+
+# Used in openh264
+
+fun:*_ssse3=uninstrumented
+fun:*_ssse3=discard
+fun:*_sse2=uninstrumented
+fun:*_sse2=discard
+fun:*_avx2=uninstrumented
+fun:*_avx2=discard
+fun:*_mmx=uninstrumented
+fun:*_mmx=discard
+fun:WelsCPUId=uninstrumented
+fun:WelsCPUSupportAVX=uninstrumented
+fun:WelsCPUIdVerify=uninstrumented
+fun:WelsCPUFeatureDetect=uninstrumented
+fun:WelsCPUDetectAVX512=uninstrumented
+fun:WelsCPUSupportFMA=uninstrumented
+fun:WelsEmms=uninstrumented
+fun:McCopyWidthEq16_sse3=uninstrumented
+
+fun:WelsCPUId=discard
+fun:WelsCPUSupportAVX=discard
+fun:WelsCPUIdVerify=discard
+fun:WelsCPUFeatureDetect=discard
+fun:WelsCPUDetectAVX512=discard
+fun:WelsCPUSupportFMA=discard
+fun:WelsEmms=discard
+fun:McCopyWidthEq16_sse3=discard
+
+
+# Used in libpcap
+fun:ibv_*=uninstrumented
+fun:ibv_*=discard 
+
+# Used in php
+fun:make_fcontext=uninstrumented
+fun:make_fcontext=discard
+fun:jump_fcontext=uninstrumented
+fun:jump_fcontext=discard
