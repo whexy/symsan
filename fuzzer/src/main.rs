@@ -4,6 +4,7 @@ use clap::{App, Arg};
 
 //extern crate angora;
 //extern crate angora_common;
+use fastgen::bf_main::*;
 use fastgen::fuzz_main::*;
 
 fn main() {
@@ -67,16 +68,24 @@ fn main() {
              .help("Sync the seeds with AFL. Output directory should be in AFL's directory structure."))
        .get_matches();
 
-    fuzz_main(
+    //     fuzz_main(
+    //         matches.value_of("input_dir").unwrap(),
+    //         matches.value_of("output_dir").unwrap(),
+    //         matches.value_of("track_target").unwrap_or("-"),
+    //         matches.values_of_lossy("pargs").unwrap(),
+    //         value_t!(matches, "thread_jobs", usize).unwrap_or(1),
+    //         value_t!(matches, "grader_jobs", usize).unwrap_or(1),
+    //         value_t!(matches, "memory_limit", u64).unwrap_or(fastgen_common::config::MEM_LIMIT),
+    //         value_t!(matches, "time_limit", u64).unwrap_or(fastgen_common::config::TIME_LIMIT),
+    //         matches.occurrences_of("sync_afl") > 0,
+    //     );
+
+    bf_main(
         matches.value_of("input_dir").unwrap(),
         matches.value_of("output_dir").unwrap(),
         matches.value_of("track_target").unwrap_or("-"),
         matches.values_of_lossy("pargs").unwrap(),
-        value_t!(matches, "thread_jobs", usize).unwrap_or(1),
-        value_t!(matches, "grader_jobs", usize).unwrap_or(1),
         value_t!(matches, "memory_limit", u64).unwrap_or(fastgen_common::config::MEM_LIMIT),
         value_t!(matches, "time_limit", u64).unwrap_or(fastgen_common::config::TIME_LIMIT),
-        matches.occurrences_of("sync_afl") > 0,
     );
-
 }
