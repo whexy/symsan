@@ -5,7 +5,6 @@ use clap::{App, Arg};
 //extern crate angora;
 //extern crate angora_common;
 use fastgen::bf_main::*;
-use fastgen::fuzz_main::*;
 
 fn main() {
     let matches = App::new("angora-fuzzer")

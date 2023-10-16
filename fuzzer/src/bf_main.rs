@@ -76,16 +76,26 @@ pub fn bf_main(
     // This is the big while loop for fuzzing!!!
     loop {
         bf_wait(&mut executor);
-        let r = running.clone();
-        let d = depot.clone();
-        let b = global_branches.clone();
-        let cmd = command_option.specify(2);
-        let bg = branch_gencount.clone();
-        let blist = branch_fliplist.clone();
-        let fk = forklock.clone();
-        let solutions = bf_loop::fuzz_loop(r, cmd, d, b, bg, blist, restart, fk, id);
-        bf_loop::grading_loop(r, cmd, d, b, bg, blist, fk, solutions);
-
+        let solutions = {
+            let r = running.clone();
+            let d = depot.clone();
+            let b = global_branches.clone();
+            let cmd = command_option.specify(2);
+            let bg = branch_gencount.clone();
+            let blist = branch_fliplist.clone();
+            let fk = forklock.clone();
+            bf_loop::fuzz_loop(r, cmd, d, b, bg, blist, restart, fk, id)
+        };
+        {
+            let r = running.clone();
+            let d = depot.clone();
+            let b = global_branches.clone();
+            let cmd = command_option.specify(2);
+            let bg = branch_gencount.clone();
+            let blist = branch_fliplist.clone();
+            let fk = forklock.clone();
+            bf_loop::grading_loop(r, cmd, d, b, bg, blist, fk, solutions);
+        }
         id = id + 1;
     }
 }

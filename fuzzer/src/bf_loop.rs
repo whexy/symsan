@@ -149,24 +149,16 @@ pub fn fuzz_loop(
 
         let (mut child, read_end) = executor.track(id as usize, &buf);
 
-        let handle = thread::Builder::new()
-            .stack_size(64 * 1024 * 1024)
-            .spawn(move || {
-                dispatcher(
-                    table,
-                    gbranch_gencount,
-                    gbranch_fliplist,
-                    gbranch_hitcount,
-                    &buf_cloned,
-                    read_end,
-                    &mut solution_queue,
-                );
-            })
-            .unwrap();
+        dispatcher(
+            table,
+            gbranch_gencount,
+            gbranch_fliplist,
+            gbranch_hitcount,
+            &buf_cloned,
+            read_end,
+            &mut solution_queue,
+        );
 
-        if handle.join().is_err() {
-            error!("Error happened in listening thread!");
-        }
         //dispatcher(table, gbranch_gencount, gbranch_hitcount, &buf_cloned, read_end);
         close(read_end)
             .map_err(|err| warn!("close read end {:?}", err))
