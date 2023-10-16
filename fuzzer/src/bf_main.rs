@@ -11,12 +11,10 @@ use std::{
     },
 };
 
-use crate::fuzz_loop;
 use crate::bf_loop;
 use crate::parser::init_engine;
 use crate::{branches, check_dep, command, depot, executor, sync};
 use crate::{cpp_interface::*, executor::Executor};
-use blockingqueue::BlockingQueue;
 use ctrlc;
 use pretty_env_logger;
 use std::collections::HashMap;
@@ -49,7 +47,6 @@ pub fn bf_main(
     let branch_fliplist = Arc::new(RwLock::new(HashSet::<(u64, u32, u32, u64)>::new()));
     let running = Arc::new(AtomicBool::new(true));
     let forklock = Arc::new(Mutex::new(0));
-    let bq = BlockingQueue::new();
     set_sigint_handler(running.clone());
 
     let mut executor = executor::Executor::new(
@@ -75,10 +72,10 @@ pub fn bf_main(
     }
     init_engine();
 
+    let mut id = 0;
     // This is the big while loop for fuzzing!!!
     loop {
         bf_wait(&mut executor);
-
         let r = running.clone();
         let d = depot.clone();
         let b = global_branches.clone();
@@ -86,9 +83,10 @@ pub fn bf_main(
         let bg = branch_gencount.clone();
         let blist = branch_fliplist.clone();
         let fk = forklock.clone();
-        let bqc = bq.clone();
-        fuzz_loop::fuzz_loop(r, cmd, d, b, bg, blist, restart, fk, bqc);
-        fuzz_loop::grading_loop(r, cmd, d, b, bg, blist, fk, bqc);
+        let solutions = bf_loop::fuzz_loop(r, cmd, d, b, bg, blist, restart, fk, id);
+        bf_loop::grading_loop(r, cmd, d, b, bg, blist, fk, solutions);
+
+        id = id + 1;
     }
 }
 

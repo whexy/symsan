@@ -372,7 +372,7 @@ impl SearchTaskBuilder {
 
   //submit a sinlge branch
   pub fn submit_task_rust(&mut self, task: &SearchTask, 
-      solution_queue: BlockingQueue<Solution>,
+      solution_queue: &mut Vec<Solution>,
       solve: bool, inputs: &HashSet<u32>)  -> bool {
     /*
        let r = save_request(task, &Path::new("saved_test"));
@@ -449,42 +449,3 @@ impl SearchTaskBuilder {
     opt_solved
   }
 }
-
-#[cfg(test)]
-  mod tests {
-    use crate::rgd::*;
-    use crate::util::*;
-    use crate::parser::*;
-    use std::path::Path;
-    use crate::gd::*;
-    use crate::task::SContext;
-    use std::collections::HashMap;
-#[test]
-    fn test_load() {
-      let tasks: Vec<SearchTask> = load_request(Path::new("saved_test")).expect("ok");
-      let mut tb = SearchTaskBuilder::new();
-      let engine = JITEngine::new();
-      let mut funcache = HashMap::new();
-      for task in tasks { let task_copy = task.clone();
-        print_task(&task_copy);
-        let mut fut = tb.construct_task(&task_copy, &engine, &mut funcache);
-        println!("search!");
-        gd_search(&mut fut);
-        for sol in fut.rgd_solutions {
-          for (k,v) in sol.iter() {
-            println!("k {} v {}", k, v);
-          }
-        }
-      }
-    }
-#[test]  
-    fn test_input() {
-      let mut ctx = SContext::new(2,2,4);
-      ctx.min_input.value.push(1);
-      let mut input = &mut ctx.min_input;
-      let mut scratch_input = input.clone();
-      scratch_input.set(0,2);
-      *input = scratch_input;
-      println!("{}",ctx.min_input.get(0));
-    }
-  }
