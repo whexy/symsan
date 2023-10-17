@@ -150,6 +150,13 @@ static mut GO_COUNT: u32 = 0;
 fn bf_wait(executor: &mut Executor) {
     let pipe_path = "/dev/shm/bf-symsan";
 
+    unsafe {
+        if GO_COUNT > 0 {
+            GO_COUNT -= 1;
+            return;
+        }
+    }
+
     // Write Stage, write to pipe "ready" or "new".
     {
         let mut file = OpenOptions::new()
@@ -161,13 +168,6 @@ fn bf_wait(executor: &mut Executor) {
 
     // Read Stage, read from the pipe
     loop {
-        unsafe {
-            if GO_COUNT > 0 {
-                GO_COUNT -= 1;
-                return;
-            }
-        }
-
         let mut buf = Vec::new();
         {
             let mut file = OpenOptions::new()
