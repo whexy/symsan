@@ -28,6 +28,8 @@ pub fn bf_main(
     mem_limit: u64,
     time_limit: u64,
 ) {
+    // Let's craft a vector here
+    let mut fuzzed = vec![false; 0];
     pretty_env_logger::init();
 
     let (seeds_dir, angora_out_dir) = initialize_directories(in_dir, out_dir, false);
@@ -76,6 +78,18 @@ pub fn bf_main(
     // This is the big while loop for fuzzing!!!
     loop {
         bf_wait(&mut executor);
+
+        // use the latest input
+        let mut max_id = depot.get_num_inputs() - 1;
+        if max_id > fuzzed.len() {
+            fuzzed.resize(max_id + 1, false);
+        }
+        while fuzzed[max_id] && max_id > 0 {
+            max_id -= 1;
+        }
+        fuzzed[max_id] = true;
+        id = max_id as u32;
+
         let solutions = {
             let r = running.clone();
             let d = depot.clone();
@@ -96,7 +110,6 @@ pub fn bf_main(
             let fk = forklock.clone();
             bf_loop::grading_loop(r, cmd, d, b, bg, blist, fk, solutions);
         }
-        id = id + 1;
     }
 }
 
